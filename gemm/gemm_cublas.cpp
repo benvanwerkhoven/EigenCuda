@@ -11,21 +11,18 @@
 //col Major for CUDA
 typedef Eigen::Matrix<float,Eigen::Dynamic,Eigen::Dynamic,Eigen::ColMajor> Mat;
 
-Mat cublas_gemm(Mat A, Mat B)
-{
 
+extern "C"
+float call_cublas_gemm_basic_version(float *hC, float *hA, float *hB, int size)
+{
+    std::chrono::time_point<std::chrono::system_clock> start, end;
+    start = std::chrono::system_clock::now();
+
+    //needed from GEMM
     const float alpha = 1.;
     const float beta = 0.;
     const float *pa = &alpha;
     const float *pb = &beta;
-
-    int size = A.cols();
-    Mat C = Mat::Zero(size,size);
-
-    // and their pointers
-    float *hA = A.data();
-    float *hB = B.data();
-    float *hC = C.data();
 
     // alloc memory on the GPU
     float *dA, *dB, *dC;
@@ -46,10 +43,10 @@ Mat cublas_gemm(Mat A, Mat B)
     //gpu_blas_gemm(handle,dA,dB,dC,size);
 
     // send data back to CPU
-    cudaMemcpy(hC,dC,size*size*sizeof(float),cudaMemcpyDeviceToHost);
-    
+    cudaMemcpy(hC,dC,size*size*sizeof(float),cudaMemcpyDeviceToHost);   
+
     // create an eigen matrix
-    C = Eigen::Map<Mat>(hC,size,size);
+    //C = Eigen::Map<Mat>(hC,size,size);  //Ben: is this line above really necessary? hC points to C's data backing array right?
 
     // free memory
     cublasDestroy(handle);
@@ -57,7 +54,17 @@ Mat cublas_gemm(Mat A, Mat B)
     cudaFree(dB);
     cudaFree(dC);
 
-    return C;
+    end = std::chrono::system_clock::now();
+    std::chrono::duration<double> elapsed_time = end-start;
+
+    return (float)elapsed_time.count();
+}
+
+
+float cublas_gemm(Mat C, Mat A, Mat B)
+{
+
+    return call_cublas_gemm_basic_version(C.data(), A.data(), B.data(), A.cols());
 
 }
 
@@ -75,17 +82,13 @@ int main(int argc, char *argv[]) {
     // Create CPU matrices
     Mat A = Mat::Random(size,size);
     Mat B = Mat::Random(size,size);
+    Mat C = Mat::Zero(size,size);
 
     // chrono    
-    std::chrono::time_point<std::chrono::system_clock> start, end;
-
-    start = std::chrono::system_clock::now();
-    Mat C = cublas_gemm(A, B);
+    auto time = cublas_gemm(C, A, B);
 
     // outputs
-    end = std::chrono::system_clock::now();
-    std::chrono::duration<double> elapsed_time = end-start;
-    std::cout << "Run time    : " << elapsed_time.count() << " secs" <<  std::endl;
+    std::cout << "Run time    : " << time << " secs" <<  std::endl;
 
     return 0;
 }
